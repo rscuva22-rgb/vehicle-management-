@@ -1,0 +1,922 @@
+<!-- Chosen Palette: Tailwind CSS Default (Cool Gray) -->
+<!-- Application Structure Plan: The application is now structured as a single-page application (SPA) within a single HTML file. This is achieved by having two main content sections, each representing a "page," and using JavaScript to toggle their visibility. The primary benefit is separating the vehicle inventory from the repair logs, creating a cleaner, more task-oriented user interface. The header now includes navigation buttons to switch between these two views. The "Vehicle" page contains the vehicle table and the import/export controls, while the "Repair" page provides a dedicated table for all repair records, with its own search and filter functionality. This approach streamlines the user flow by eliminating the need to scroll or collapse sections to find the desired information. -->
+<!-- Visualization & Content Choices: The application displays vehicle and repair data in separate HTML tables. The vehicle table serves as a top-level inventory, while the repair table acts as a global log. This separation aligns with the user's two primary tasks: managing the fleet and managing repairs. No charts or complex visualizations are used, as the primary goal is data entry, viewing, and filtering. Interaction: The navigation buttons in the header now control the active view. The tables themselves retain their filtering, searching, and action buttons (edit, delete). Modals are used for all data entry and editing forms to maintain a clean page layout. Library/Method: Vanilla JavaScript is used to manage page visibility, form submissions, and data manipulation. The data is stored and fetched from Firebase Realtime Database. -->
+<!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle & Repair Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-storage.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif;
+            background-color: #F8FAFC;
+        }
+        header h1, header p { 
+            font-family: 'Poppins', sans-serif;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(5px);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal.open {
+            display: flex;
+        }
+        .modal-content {
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .nav-btn.active {
+            background-color: #3B82F6;
+            color: white;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+
+<header class="bg-white text-gray-950 shadow-md py-6">
+    <div class="container mx-auto px-4 text-center">
+        <h1 class="text-3xl md:text-4xl font-bold">Vehicle Management System</h1>
+        <p class="text-lg text-gray-600 mt-1">RSC (Uva)</p>
+        <div class="mt-4 flex justify-center gap-4">
+            <button id="navVehicleBtn" class="nav-btn bg-gray-200 text-gray-800 px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex items-center gap-2 active">
+                <i class="fas fa-car-side"></i> Vehicle Database
+            </button>
+            <button id="navRepairBtn" class="nav-btn bg-gray-200 text-gray-800 px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex items-center gap-2">
+                <i class="fas fa-tools"></i> Repair Management
+            </button>
+        </div>
+    </div>
+</header>
+
+<main class="container mx-auto p-4 mt-8">
+    <!-- Vehicle Database Page -->
+    <div id="vehicle-page" class="page">
+        <div class="bg-white rounded-2xl shadow-2xl p-6 mb-8">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <h2 class="text-2xl font-semibold text-gray-800">Vehicle Database</h2>
+                <div class="flex gap-4 flex-wrap justify-end">
+                    <button id="addVehicleBtn" class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex items-center gap-2">
+                        <i class="fas fa-car-side"></i> Add New Vehicle
+                    </button>
+                    <button id="exportVehiclesBtn" class="bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex items-center gap-2">
+                        <i class="fas fa-file-csv"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                <input type="text" id="vehicleSearch" placeholder="Search Vehicle Number..." class="px-3 py-2 text-sm border border-gray-300 bg-white text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select id="vehicleTypeFilter" class="px-3 py-2 text-sm border border-gray-300 bg-white text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="" class="bg-white">All Types</option>
+                    <option value="Backhoe" class="bg-white">Backhoe</option>
+                    <option value="Boom Truck" class="bg-white">Boom Truck</option>
+                    <option value="Bowser" class="bg-white">Bowser</option>
+                    <option value="Car" class="bg-white">Car</option>
+                    <option value="Crew Cab" class="bg-white">Crew Cab</option>
+                    <option value="Double Cab" class="bg-white">Double Cab</option>
+                    <option value="JCB" class="bg-white">JCB</option>
+                    <option value="Lorry" class="bg-white">Lorry</option>
+                    <option value="Single Cab" class="bg-white">Single Cab</option>
+                    <option value="Three-wheeler" class="bg-white">Three-wheeler</option>
+                    <option value="Tractor" class="bg-white">Tractor</option>
+                    <option value="Van" class="bg-white">Van</option>
+                    <option value="Other" class="bg-white">Other</option>
+                </select>
+                <select id="vehicleRegionFilter" class="px-3 py-2 text-sm border border-gray-300 bg-white text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="" class="bg-white">All Regions</option>
+                    <option value="RSC Office" class="bg-white">RSC Office</option>
+                    <option value="O&M Monaragala" class="bg-white">O&M Monaragala</option>
+                    <option value="O&M Bandarawela" class="bg-white">O&M Bandarawela</option>
+                </select>
+            </div>
+            <div class="flex justify-end mb-6">
+                <button id="clearVehicleFiltersBtn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-xl shadow-md hover:bg-gray-300 transition-colors flex items-center gap-2">
+                    <i class="fas fa-filter-circle-xmark"></i> Clear Filters
+                </button>
+            </div>
+
+            <div class="overflow-x-auto overflow-y-auto max-h-96 rounded-2xl shadow-inner border border-gray-200">
+                <table class="w-full text-sm text-left text-gray-700">
+                    <thead class="text-xs uppercase bg-gray-100 text-gray-600 sticky top-0">
+                        <tr>
+                            <th scope="col" class="px-6 py-3">Vehicle Number</th>
+                            <th scope="col" class="px-6 py-3">Board or Hiring</th>
+                            <th scope="col" class="px-6 py-3">Region</th>
+                            <th scope="col" class="px-6 py-3">Make</th>
+                            <th scope="col" class="px-6 py-3">Vehicle Type</th>
+                            <th scope="col" class="px-6 py-3">Model</th>
+                            <th scope="col" class="px-6 py-3">Manufacture Year</th>
+                            <th scope="col" class="px-6 py-3">Engine Number</th>
+                            <th scope="col" class="px-6 py-3">Chassis Number</th>
+                            <th scope="col" class="px-6 py-3">Revenue Licence Expiry Date</th>
+                            <th scope="col" class="px-6 py-3">Fuel Balancing Rate</th>
+                            <th scope="col" class="px-6 py-3">Driver's Name</th>
+                            <th scope="col" class="px-6 py-3">Driver's Contact Number</th>
+                            <th scope="col" class="px-6 py-3">Relevant Office</th>
+                            <th scope="col" class="px-6 py-3">Fuel Type</th>
+                            <th scope="col" class="px-6 py-3">Remarks</th>
+                            <th scope="col" class="px-6 py-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vehicleTable">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div id="import-section" class="bg-white rounded-2xl shadow-2xl p-6 mt-8">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Import Vehicle Data from CSV</h2>
+            <div class="flex flex-col md:flex-row items-center gap-4">
+                <input type="file" id="csvFile" accept=".csv" class="w-full md:w-auto text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700">
+                <button id="importCSVBtn" class="bg-gradient-to-r from-green-500 to-teal-600 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex items-center gap-2 w-full md:w-auto justify-center">
+                    <i class="fas fa-upload"></i> Import Data
+                </button>
+                <button id="clearAllVehiclesBtn" class="bg-gradient-to-r from-red-500 to-red-600 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex items-center gap-2 w-full md:w-auto justify-center">
+                    <i class="fas fa-trash-alt"></i> Clear All Data
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Repair Management Page -->
+    <div id="repair-page" class="page hidden">
+        <div class="bg-white rounded-2xl shadow-2xl p-6 mb-8">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <h2 class="text-2xl font-semibold text-gray-800">Repair Management & Tracking</h2>
+                <button id="addRepairBtn" class="bg-gradient-to-r from-blue-500 to-cyan-600 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex items-center gap-2">
+                     <i class="fas fa-plus-circle"></i> Add New Repair
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                <input type="text" id="repairSearch" placeholder="Search by Vehicle No. or Description..." class="px-3 py-2 text-sm border border-gray-300 bg-white text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select id="repairStatusFilter" class="px-3 py-2 text-sm border border-gray-300 bg-white text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="" class="bg-white">All Statuses</option>
+                    <option value="In Progress" class="bg-white">In Progress</option>
+                    <option value="Completed" class="bg-white">Completed</option>
+                    <option value="Pending Parts" class="bg-white">Pending Parts</option>
+                </select>
+                <div class="flex justify-end lg:col-span-1">
+                    <button id="clearRepairFiltersBtn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-xl shadow-md hover:bg-gray-300 transition-colors flex items-center gap-2">
+                        <i class="fas fa-filter-circle-xmark"></i> Clear Filters
+                    </button>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-2xl shadow-inner border border-gray-200">
+                <table class="w-full text-sm text-left text-gray-700">
+                    <thead class="text-xs uppercase bg-gray-100 text-gray-600">
+                        <tr>
+                            <th scope="col" class="px-6 py-3">Vehicle Number</th>
+                            <th scope="col" class="px-6 py-3">Date</th>
+                            <th scope="col" class="px-6 py-3">Description</th>
+                            <th scope="col" class="px-6 py-3">Cost ($)</th>
+                            <th scope="col" class="px-6 py-3">Technician</th>
+                            <th scope="col" class="px-6 py-3">Status</th>
+                            <th scope="col" class="px-6 py-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="repairTable">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</main>
+
+<div class="modal" id="vehicleModal">
+    <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-lg p-8 m-4">
+        <h3 id="vehicleFormTitle" class="text-2xl font-bold text-center mb-6 text-gray-800">Add Vehicle</h3>
+        <form id="vehicleForm" class="space-y-4">
+            <input type="hidden" id="vehicleEditKey">
+            <div>
+                <label for="vehicleIsBoard" class="block text-sm font-medium text-gray-700">Board Vehicle or Hiring</label>
+                <select id="vehicleIsBoard" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="Board" class="bg-white">Board</option>
+                    <option value="Hiring" class="bg-white">Hiring</option>
+                </select>
+            </div>
+            <div>
+                <label for="vehicleNumber" class="block text-sm font-medium text-gray-700">Vehicle Number</label>
+                <input type="text" id="vehicleNumber" placeholder="E.g., WP PF-6358" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="vehicleRegion" class="block text-sm font-medium text-gray-700">Region</label>
+                <select id="vehicleRegion" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="RSC Office">RSC Office</option>
+                    <option value="O&M Monaragala">O&M Monaragala</option>
+                    <option value="O&M Bandarawela">O&M Bandarawela</option>
+                </select>
+            </div>
+            <div>
+                <label for="vehicleMake" class="block text-sm font-medium text-gray-700">Make</label>
+                <input type="text" id="vehicleMake" placeholder="E.g., TOYOTA" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="vehicleType" class="block text-sm font-medium text-gray-700">Vehicle Type</label>
+                <input type="text" id="vehicleType" placeholder="E.g., Double cab" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="vehicleModel" class="block text-sm font-medium text-gray-700">Model</label>
+                <input type="text" id="vehicleModel" placeholder="E.g., Hilux" class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="manufactureYear" class="block text-sm font-medium text-gray-700">Manufacture Year</label>
+                <input type="number" id="manufactureYear" placeholder="E.g., 2014" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="engineNumber" class="block text-sm font-medium text-gray-700">Engine Number</label>
+                <input type="text" id="engineNumber" placeholder="E.g., 2KD8396221" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="chassisNumber" class="block text-sm font-medium text-gray-700">Chassis Number</label>
+                <input type="text" id="chassisNumber" placeholder="E.g., MR0FR22GX00784078" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="revenueLicence" class="block text-sm font-medium text-gray-700">Revenue Licence Expiry Date</label>
+                <input type="date" id="revenueLicence" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="fuelBalancingRate" class="block text-sm font-medium text-gray-700">Fuel Balancing Rate</label>
+                <input type="number" step="0.1" id="fuelBalancingRate" placeholder="E.g., 9.5" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="driversName" class="block text-sm font-medium text-gray-700">Driver's Name</label>
+                <input type="text" id="driversName" placeholder="E.g., Piyal" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="driversContactNumber" class="block text-sm font-medium text-gray-700">Driver's Contact Number</label>
+                <input type="tel" id="driversContactNumber" placeholder="E.g., 0771234567" class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="vehicleLocation" class="block text-sm font-medium text-gray-700">Relevant Office</label>
+                <input type="text" id="vehicleLocation" placeholder="E.g., Welimada Workshop" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="fuelType" class="block text-sm font-medium text-gray-700">Fuel Type</label>
+                <select id="fuelType" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="Petrol" class="bg-white">Petrol</option>
+                    <option value="Diesel" class="bg-white">Diesel</option>
+                    <option value="Electric" class="bg-white">Electric</option>
+                </select>
+            </div>
+            <div>
+                <label for="lastServiceRemarks" class="block text-sm font-medium text-gray-700">Remarks</label>
+                <textarea id="lastServiceRemarks" placeholder="Add Service Remarks" rows="3" class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+            </div>
+            <div>
+                <label for="vehicleImageFile" class="block text-sm font-medium text-gray-700">Vehicle Image</label>
+                <input type="file" id="vehicleImageFile" accept="image/*" class="mt-1 block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700">
+                <div id="vehicleUploadProgressContainer" class="mt-2 hidden w-full bg-gray-200 rounded-full h-2.5">
+                    <div id="vehicleUploadProgress" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-in-out" style="width: 0%;"></div>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-4 pt-4">
+                <button type="button" id="cancelVehicleBtn" class="px-6 py-2 bg-gray-300 text-gray-800 rounded-xl hover:bg-gray-400 transition-colors">Cancel</button>
+                <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors">Save Vehicle</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal" id="repairModal">
+    <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-lg p-8 m-4">
+        <h3 id="repairFormTitle" class="text-2xl font-bold text-center mb-6 text-gray-800">Add Repair Record</h3>
+        <form id="repairForm" class="space-y-4">
+            <input type="hidden" id="repairEditKey">
+            <div>
+                <label for="repairVehicleNumber" class="block text-sm font-medium text-gray-700">Vehicle Number</label>
+                <input type="text" id="repairVehicleNumber" placeholder="E.g., WP PF-6358" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="repairDate" class="block text-sm font-medium text-gray-700">Repair Date</label>
+                <input type="date" id="repairDate" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="repairDescription" class="block text-sm font-medium text-gray-700">Description</label>
+                <textarea id="repairDescription" placeholder="Briefly describe the repair" rows="3" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+            </div>
+            <div>
+                <label for="repairCost" class="block text-sm font-medium text-gray-700">Cost (SLR)</label>
+                <input type="number" step="0.01" id="repairCost" placeholder="E.g., 15000" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="repairTechnician" class="block text-sm font-medium text-gray-700">Technician / Garage</label>
+                <select id="repairTechnician" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="" disabled selected>Select an option</option>
+                    <option value="NWSDB Workshop">NWSDB Workshop</option>
+                    <option value="Out Side Garage">Out Side Garage</option>
+                    <option value="Authorised Dealer">Authorised Dealer</option>
+                </select>
+            </div>
+            <div>
+                <label for="repairStatus" class="block text-sm font-medium text-gray-700">Status</label>
+                <select id="repairStatus" required class="mt-1 block w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Pending Parts">Pending Parts</option>
+                </select>
+            </div>
+            <div class="flex justify-end space-x-4 pt-4">
+                <button type="button" id="cancelRepairBtn" class="px-6 py-2 bg-gray-300 text-gray-800 rounded-xl hover:bg-gray-400 transition-colors">Cancel</button>
+                <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors">Save Repair</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal" id="alertModal">
+    <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+        <h3 id="alertTitle" class="text-xl font-bold mb-4 text-gray-800">Alert</h3>
+        <p id="alertMessage" class="text-gray-700 mb-6"></p>
+        <button id="alertOKBtn" class="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors w-full">OK</button>
+    </div>
+</div>
+
+<div class="modal" id="confirmModal">
+    <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+        <h3 id="confirmTitle" class="text-xl font-bold mb-4 text-gray-800">Confirm Action</h3>
+        <p id="confirmMessage" class="text-gray-700 mb-6"></p>
+        <div class="flex justify-center space-x-4">
+            <button id="confirmCancelBtn" class="px-6 py-2 bg-gray-300 text-gray-800 rounded-xl hover:bg-gray-400 transition-colors">Cancel</button>
+            <button id="confirmOKBtn" class="px-6 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<footer class="bg-white shadow-inner py-4 mt-8">
+    <div class="container mx-auto px-4 text-center text-gray-500 text-sm">
+        <p>Mechanical and Electrical Section, Regional Support Center (Uva), National Water Supply and Drainage Board of Sri Lanka</p>
+    </div>
+</footer>
+
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyDkCFr-63wJOXW4ZQJj1RTCBp_80s7H9jw",
+        authDomain: "pump-database-13e25.firebaseapp.com",
+        databaseURL: "https://pump-database-13e25-default-rtdb.firebaseio.com",
+        projectId: "pump-database-13e25",
+        storageBucket: "pump-database-13e25.appspot.com",
+        messagingSenderId: "269362357992",
+        appId: "1:269362357992:web:93f99581df8a0eded48b5d",
+        measurementId: "G-RB2PWHJCY9"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const storage = firebase.storage();
+
+    let allVehicles = [];
+    let allRepairs = [];
+    
+    const vehicleTable = document.getElementById('vehicleTable');
+    const vehicleModal = document.getElementById('vehicleModal');
+    const vehicleForm = document.getElementById('vehicleForm');
+    const addVehicleBtn = document.getElementById('addVehicleBtn');
+    const cancelVehicleBtn = document.getElementById('cancelVehicleBtn');
+    const vehicleUploadProgressContainer = document.getElementById('vehicleUploadProgressContainer');
+    const vehicleUploadProgress = document.getElementById('vehicleUploadProgress');
+    const vehicleSearchInput = document.getElementById('vehicleSearch');
+    const vehicleTypeFilter = document.getElementById('vehicleTypeFilter');
+    const vehicleRegionFilter = document.getElementById('vehicleRegionFilter');
+    const clearVehicleFiltersBtn = document.getElementById('clearVehicleFiltersBtn');
+    const exportVehiclesBtn = document.getElementById('exportVehiclesBtn');
+    const importCSVBtn = document.getElementById('importCSVBtn');
+    const csvFile = document.getElementById('csvFile');
+    const clearAllVehiclesBtn = document.getElementById('clearAllVehiclesBtn');
+    
+    const repairTable = document.getElementById('repairTable');
+    const repairModal = document.getElementById('repairModal');
+    const repairForm = document.getElementById('repairForm');
+    const addRepairBtn = document.getElementById('addRepairBtn');
+    const cancelRepairBtn = document.getElementById('cancelRepairBtn');
+    const repairSearchInput = document.getElementById('repairSearch');
+    const repairStatusFilter = document.getElementById('repairStatusFilter');
+    const clearRepairFiltersBtn = document.getElementById('clearRepairFiltersBtn');
+
+    const navVehicleBtn = document.getElementById('navVehicleBtn');
+    const navRepairBtn = document.getElementById('navRepairBtn');
+    const vehiclePage = document.getElementById('vehicle-page');
+    const repairPage = document.getElementById('repair-page');
+    const pages = document.querySelectorAll('.page');
+    const navButtons = document.querySelectorAll('.nav-btn');
+
+    const alertModal = document.getElementById('alertModal');
+    const alertMessage = document.getElementById('alertMessage');
+    const alertOKBtn = document.getElementById('alertOKBtn');
+    const confirmModal = document.getElementById('confirmModal');
+    const confirmMessage = document.getElementById('confirmMessage');
+    const confirmOKBtn = document.getElementById('confirmOKBtn');
+    const confirmCancelBtn = document.getElementById('confirmCancelBtn');
+    let confirmCallback = null;
+
+    function showPage(pageId) {
+        pages.forEach(page => page.classList.add('hidden'));
+        document.getElementById(pageId).classList.remove('hidden');
+
+        navButtons.forEach(btn => btn.classList.remove('active'));
+        if (pageId === 'vehicle-page') {
+            navVehicleBtn.classList.add('active');
+            filterVehiclesTable();
+        } else {
+            navRepairBtn.classList.add('active');
+            filterRepairsTable();
+        }
+    }
+
+    navVehicleBtn.addEventListener('click', () => showPage('vehicle-page'));
+    navRepairBtn.addEventListener('click', () => showPage('repair-page'));
+    
+    function showCustomAlert(message) {
+        alertMessage.textContent = message;
+        alertModal.classList.add('open');
+    }
+
+    function showCustomConfirm(message, callback) {
+        confirmMessage.textContent = message;
+        confirmCallback = callback;
+        confirmModal.classList.add('open');
+    }
+
+    alertOKBtn.addEventListener('click', () => alertModal.classList.remove('open'));
+    confirmCancelBtn.addEventListener('click', () => confirmModal.classList.remove('open'));
+    confirmOKBtn.addEventListener('click', () => {
+        confirmModal.classList.remove('open');
+        if (confirmCallback) {
+            confirmCallback();
+        }
+    });
+
+    db.ref("vehicles").on("value", snapshot => {
+        const data = snapshot.val() || {};
+        allVehicles = Object.keys(data).map(key => ({ key, ...data[key] }));
+        filterVehiclesTable();
+    });
+    
+    db.ref("repairs").on("value", snapshot => {
+        const data = snapshot.val() || {};
+        allRepairs = Object.keys(data).map(key => ({ key, ...data[key] }));
+        filterRepairsTable();
+    });
+
+    function renderVehicleTable(vehicles) {
+        vehicleTable.innerHTML = "";
+        if (vehicles.length === 0) {
+            vehicleTable.innerHTML = `<tr><td colspan="17" class="text-center py-4 text-gray-500">No vehicles found.</td></tr>`;
+            return;
+        }
+        vehicles.forEach(vehicle => {
+            const vehicleRepairs = allRepairs.filter(r => r.vehicleNumber === vehicle.vehicleNumber);
+
+            const row = document.createElement('tr');
+            row.className = "bg-white border-b border-gray-200";
+            row.innerHTML = `
+                <td class="px-6 py-4 font-medium text-gray-900">${vehicle.vehicleNumber}</td>
+                <td class="px-6 py-4">${vehicle.vehicleIsBoard}</td>
+                <td class="px-6 py-4">${vehicle.vehicleRegion}</td>
+                <td class="px-6 py-4">${vehicle.vehicleMake}</td>
+                <td class="px-6 py-4">${vehicle.vehicleType}</td>
+                <td class="px-6 py-4">${vehicle.vehicleModel}</td>
+                <td class="px-6 py-4">${vehicle.manufactureYear}</td>
+                <td class="px-6 py-4">${vehicle.engineNumber}</td>
+                <td class="px-6 py-4">${vehicle.chassisNumber}</td>
+                <td class="px-6 py-4">${vehicle.revenueLicence}</td>
+                <td class="px-6 py-4">${vehicle.fuelBalancingRate}</td>
+                <td class="px-6 py-4">${vehicle.driversName}</td>
+                <td class="px-6 py-4">${vehicle.driversContactNumber}</td>
+                <td class="px-6 py-4">${vehicle.vehicleLocation}</td>
+                <td class="px-6 py-4">${vehicle.fuelType}</td>
+                <td class="px-6 py-4">${vehicle.lastServiceRemarks}</td>
+                <td class="px-6 py-4 space-x-2 whitespace-nowrap">
+                    <button onclick="toggleRepairHistory('${vehicle.key}')" class="text-green-600 hover:text-green-800 transition-colors" title="View History"><i class="fas fa-history"></i></button>
+                    <button onclick="editVehicle('${vehicle.key}')" class="text-blue-600 hover:text-blue-800 transition-colors" title="Edit Vehicle"><i class="fas fa-edit"></i></button>
+                    <button onclick="confirmDeleteVehicle('${vehicle.key}')" class="text-red-600 hover:text-red-800 transition-colors" title="Delete Vehicle"><i class="fas fa-trash"></i></button>
+                    <button onclick="addRepairForVehicle('${vehicle.vehicleNumber}')" class="text-purple-600 hover:text-purple-800 transition-colors" title="Add Repair"><i class="fas fa-tools"></i></button>
+                </td>
+            `;
+            vehicleTable.appendChild(row);
+
+            const historyRow = document.createElement('tr');
+            historyRow.id = `history-${vehicle.key}`;
+            historyRow.className = "hidden";
+            let historyHtml = `<td colspan="17" class="p-4 bg-gray-50">`;
+            if (vehicleRepairs.length > 0) {
+                historyHtml += `
+                    <h4 class="text-lg font-semibold mb-2 text-gray-700">Repair History for ${vehicle.vehicleNumber}</h4>
+                    <div class="overflow-x-auto rounded-lg border border-gray-200">
+                        <table class="min-w-full text-sm">
+                            <thead class="bg-gray-200">
+                                <tr>
+                                    <th class="px-4 py-2 text-left">Date</th>
+                                    <th class="px-4 py-2 text-left">Description</th>
+                                    <th class="px-4 py-2 text-left">Cost</th>
+                                    <th class="px-4 py-2 text-left">Technician</th>
+                                    <th class="px-4 py-2 text-left">Status</th>
+                                    <th class="px-4 py-2 text-left">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white">`;
+                vehicleRepairs.forEach(repair => {
+                    historyHtml += `
+                                <tr class="border-b">
+                                    <td class="px-4 py-2">${repair.repairDate}</td>
+                                    <td class="px-4 py-2">SLR ${parseFloat(repair.cost).toFixed(2)}</td>
+                                    <td class="px-4 py-2">${repair.description}</td>
+                                    <td class="px-4 py-2">${repair.technician}</td>
+                                    <td class="px-4 py-2">
+                                        <span class="px-2 py-1 rounded-full text-xs font-semibold
+                                            ${repair.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                                              repair.status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
+                                              'bg-red-100 text-red-800'}">
+                                            ${repair.status}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-2 space-x-2">
+                                        <button onclick="editRepair('${repair.key}')" class="text-blue-600 hover:text-blue-800"><i class="fas fa-edit"></i></button>
+                                        <button onclick="confirmDeleteRepair('${repair.key}')" class="text-red-600 hover:text-red-800"><i class="fas fa-trash"></i></button>
+                                    </td>
+                                </tr>`;
+                });
+                historyHtml += `</tbody></table></div>`;
+            } else {
+                historyHtml += `<p class="text-center text-gray-500 py-4">No repair history found for this vehicle.</p>`;
+            }
+            historyHtml += `</td>`;
+            historyRow.innerHTML = historyHtml;
+            vehicleTable.appendChild(historyRow);
+        });
+    }
+
+    function renderRepairTable(repairs) {
+        repairTable.innerHTML = "";
+        if (repairs.length === 0) {
+            repairTable.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-gray-500">No repair records found.</td></tr>`;
+            return;
+        }
+        repairs.forEach(repair => {
+            const row = document.createElement('tr');
+            row.className = "bg-white border-b border-gray-200";
+            row.innerHTML = `
+                <td class="px-6 py-4 font-medium text-gray-900">${repair.vehicleNumber}</td>
+                <td class="px-6 py-4">${repair.repairDate}</td>
+                <td class="px-6 py-4">${repair.description}</td>
+                <td class="px-6 py-4">SLR ${parseFloat(repair.cost).toFixed(2)}</td>
+                <td class="px-6 py-4">${repair.technician}</td>
+                <td class="px-6 py-4">
+                    <span class="px-2 py-1 rounded-full text-xs font-semibold
+                        ${repair.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                          repair.status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'}">
+                        ${repair.status}
+                    </span>
+                </td>
+                <td class="px-6 py-4 space-x-2 whitespace-nowrap">
+                    <button onclick="editRepair('${repair.key}')" class="text-blue-600 hover:text-blue-800 transition-colors" title="Edit Repair"><i class="fas fa-edit"></i></button>
+                    <button onclick="confirmDeleteRepair('${repair.key}')" class="text-red-600 hover:text-red-800 transition-colors" title="Delete Repair"><i class="fas fa-trash"></i></button>
+                </td>
+            `;
+            repairTable.appendChild(row);
+        });
+    }
+
+    window.toggleRepairHistory = function(key) {
+        const historyRow = document.getElementById(`history-${key}`);
+        historyRow.classList.toggle('hidden');
+    }
+
+    addVehicleBtn.addEventListener('click', () => {
+        vehicleForm.reset();
+        document.getElementById('vehicleEditKey').value = '';
+        document.getElementById('vehicleFormTitle').textContent = 'Add Vehicle';
+        vehicleUploadProgressContainer.classList.add('hidden');
+        vehicleUploadProgress.style.width = "0%";
+        vehicleModal.classList.add('open');
+    });
+
+    cancelVehicleBtn.addEventListener('click', () => vehicleModal.classList.remove('open'));
+
+    vehicleForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const editKey = document.getElementById('vehicleEditKey').value;
+        const fileInput = document.getElementById('vehicleImageFile');
+        const file = fileInput.files[0];
+
+        const vehicleData = {
+            vehicleNumber: document.getElementById('vehicleNumber').value,
+            vehicleIsBoard: document.getElementById('vehicleIsBoard').value,
+            vehicleRegion: document.getElementById('vehicleRegion').value,
+            vehicleMake: document.getElementById('vehicleMake').value,
+            vehicleType: document.getElementById('vehicleType').value,
+            vehicleModel: document.getElementById('vehicleModel').value,
+            manufactureYear: document.getElementById('manufactureYear').value,
+            engineNumber: document.getElementById('engineNumber').value,
+            chassisNumber: document.getElementById('chassisNumber').value,
+            revenueLicence: document.getElementById('revenueLicence').value,
+            fuelBalancingRate: parseFloat(document.getElementById('fuelBalancingRate').value),
+            driversName: document.getElementById('driversName').value,
+            driversContactNumber: document.getElementById('driversContactNumber').value,
+            vehicleLocation: document.getElementById('vehicleLocation').value,
+            fuelType: document.getElementById('fuelType').value,
+            lastServiceRemarks: document.getElementById('lastServiceRemarks').value,
+        };
+        
+        if (editKey) {
+            const existingVehicle = allVehicles.find(v => v.key === editKey);
+            vehicleData.imageFile = existingVehicle ? existingVehicle.imageFile : null;
+        } else {
+            vehicleData.imageFile = null;
+        }
+
+        if (file) {
+            uploadFileAndSave(vehicleData, file, editKey, 'vehicle_images', 'vehicles');
+        } else {
+            saveData(editKey, vehicleData, "vehicles");
+        }
+        vehicleModal.classList.remove('open');
+    });
+
+    function uploadFileAndSave(data, file, editKey, folder, dbPath) {
+        let progressContainer = vehicleUploadProgressContainer;
+        let progressBar = vehicleUploadProgress;
+
+        progressContainer.classList.remove('hidden');
+        const storageRef = storage.ref(`${folder}/${Date.now()}_${file.name}`);
+        const uploadTask = storageRef.put(file);
+
+        uploadTask.on('state_changed',
+            snapshot => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                progressBar.style.width = progress + "%";
+            },
+            error => {
+                showCustomAlert("Error uploading file: " + error.message);
+            },
+            () => {
+                uploadTask.snapshot.ref.getDownloadURL().then(url => {
+                    data.imageFile = url;
+                    saveData(editKey, data, dbPath);
+                });
+            }
+        );
+    }
+    
+    function saveData(editKey, data, dbPath) {
+        if (editKey) {
+            db.ref(`${dbPath}/${editKey}`).set(data).then(() => {
+                showCustomAlert("Record updated successfully!");
+            });
+        } else {
+            db.ref(dbPath).push(data).then(() => {
+                showCustomAlert("Record added successfully!");
+            });
+        }
+    }
+
+    window.editVehicle = function(key) {
+        const vehicle = allVehicles.find(v => v.key === key);
+        if (vehicle) {
+            document.getElementById('vehicleEditKey').value = key;
+            document.getElementById('vehicleIsBoard').value = vehicle.vehicleIsBoard;
+            document.getElementById('vehicleNumber').value = vehicle.vehicleNumber;
+            document.getElementById('vehicleRegion').value = vehicle.vehicleRegion;
+            document.getElementById('vehicleMake').value = vehicle.vehicleMake;
+            document.getElementById('vehicleType').value = vehicle.vehicleType;
+            document.getElementById('vehicleModel').value = vehicle.vehicleModel;
+            document.getElementById('manufactureYear').value = vehicle.manufactureYear;
+            document.getElementById('engineNumber').value = vehicle.engineNumber;
+            document.getElementById('chassisNumber').value = vehicle.chassisNumber;
+            document.getElementById('revenueLicence').value = vehicle.revenueLicence;
+            document.getElementById('fuelBalancingRate').value = vehicle.fuelBalancingRate;
+            document.getElementById('driversName').value = vehicle.driversName;
+            document.getElementById('driversContactNumber').value = vehicle.driversContactNumber;
+            document.getElementById('vehicleLocation').value = vehicle.vehicleLocation;
+            document.getElementById('fuelType').value = vehicle.fuelType;
+            document.getElementById('lastServiceRemarks').value = vehicle.lastServiceRemarks;
+            document.getElementById('vehicleFormTitle').textContent = 'Edit Vehicle';
+            vehicleUploadProgressContainer.classList.add('hidden');
+            vehicleModal.classList.add('open');
+        }
+    };
+
+    window.confirmDeleteVehicle = function(key) {
+        showCustomConfirm("Are you sure you want to delete this vehicle and all its repair history?", () => {
+            const vehicle = allVehicles.find(v => v.key === key);
+            if (!vehicle) return;
+
+            const repairsToDelete = allRepairs.filter(r => r.vehicleNumber === vehicle.vehicleNumber);
+            const updates = {};
+            updates[`/vehicles/${key}`] = null;
+            repairsToDelete.forEach(r => {
+                updates[`/repairs/${r.key}`] = null;
+            });
+
+            if (vehicle.imageFile) {
+                storage.refFromURL(vehicle.imageFile).delete().catch(err => console.error("Error deleting image, continuing with db delete:", err));
+            }
+            
+            db.ref().update(updates).then(() => {
+                showCustomAlert("Vehicle and associated repairs deleted successfully!");
+            }).catch(error => {
+                showCustomAlert("Failed to delete vehicle: " + error.message);
+            });
+        });
+    };
+    
+    function filterVehiclesTable() {
+        const searchTerm = vehicleSearchInput.value.toLowerCase();
+        const selectedType = vehicleTypeFilter.value;
+        const selectedRegion = vehicleRegionFilter.value;
+
+        const filteredVehicles = allVehicles.filter(vehicle => {
+            const matchesSearch = vehicle.vehicleNumber.toLowerCase().includes(searchTerm);
+            const matchesType = selectedType === "" || vehicle.vehicleType === selectedType;
+            const matchesRegion = selectedRegion === "" || vehicle.vehicleRegion === selectedRegion;
+            return matchesSearch && matchesType && matchesRegion;
+        });
+        renderVehicleTable(filteredVehicles);
+    }
+
+    function filterRepairsTable() {
+        const searchTerm = repairSearchInput.value.toLowerCase();
+        const selectedStatus = repairStatusFilter.value;
+
+        const filteredRepairs = allRepairs.filter(repair => {
+            const matchesSearch = repair.vehicleNumber.toLowerCase().includes(searchTerm) || repair.description.toLowerCase().includes(searchTerm);
+            const matchesStatus = selectedStatus === "" || repair.status === selectedStatus;
+            return matchesSearch && matchesStatus;
+        });
+        renderRepairTable(filteredRepairs);
+    }
+
+    vehicleSearchInput.addEventListener('input', filterVehiclesTable);
+    vehicleTypeFilter.addEventListener('change', filterVehiclesTable);
+    vehicleRegionFilter.addEventListener('change', filterVehiclesTable);
+
+    clearVehicleFiltersBtn.addEventListener('click', () => {
+        vehicleSearchInput.value = '';
+        vehicleTypeFilter.value = '';
+        vehicleRegionFilter.value = '';
+        filterVehiclesTable();
+    });
+
+    exportVehiclesBtn.addEventListener('click', () => {
+        const headers = ['Vehicle Number', 'Board or Hiring', 'Region', 'Make', 'Vehicle Type', 'Model', 'Manufacture Year', 'Engine Number', 'Chassis Number', 'Revenue Licence Expiry', 'Fuel Balancing Rate', 'Drivers Name', 'Drivers Contact Number', 'Relevant Office', 'Fuel Type', 'Remarks', 'Image URL'];
+        const rows = allVehicles.map(v => [v.vehicleNumber, v.vehicleIsBoard, v.vehicleRegion, v.vehicleMake, v.vehicleType, v.vehicleModel, v.manufactureYear, v.engineNumber, v.chassisNumber, v.revenueLicence, v.fuelBalancingRate, v.driversName, v.driversContactNumber, v.vehicleLocation, v.fuelType, v.lastServiceRemarks, v.imageFile]);
+
+        let csvContent = "data:text/csv;charset=utf-8," + headers.map(h => `"${h.replace(/"/g, '""')}"`).join(',') + '\n';
+        rows.forEach(row => {
+            csvContent += row.map(item => `"${(item || '').toString().replace(/"/g, '""')}"`).join(',') + '\n';
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "vehicles.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+
+    importCSVBtn.addEventListener('click', () => {
+        if (!csvFile.files.length) {
+            showCustomAlert("Please select a CSV file to import.");
+            return;
+        }
+        const file = csvFile.files[0];
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const text = event.target.result;
+            const lines = text.split('\n').filter(line => line.trim() !== '');
+            if (lines.length <= 1) {
+                showCustomAlert("The selected CSV file is empty or malformed.");
+                return;
+            }
+            const headerLine = lines[0].trim().split(',').map(h => h.trim().replace(/"/g, ''));
+            const headerMapping = {
+                'Vehicle_Number': 'vehicleNumber', 'Board_or_Hiring': 'vehicleIsBoard', 'Region': 'vehicleRegion', 'Make': 'vehicleMake', 'Vehicle_Type': 'vehicleType', 'Model': 'vehicleModel', 'Manufacture_Year': 'manufactureYear', 'Engine_Number': 'engineNumber', 'Chassis_Number': 'chassisNumber', 'Revenue_Licence_Expiry': 'revenueLicence', 'Fuel_Balancing_Rate': 'fuelBalancingRate', 'Drivers_Name': 'driversName', 'Drivers_Contact_Number': 'driversContactNumber', 'Relevant_Office': 'vehicleLocation', 'Fuel_Type': 'fuelType', 'Remarks': 'lastServiceRemarks', 'Image_URL': 'imageFile'
+            };
+            const updates = {};
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].trim().split(',').map(v => v.trim().replace(/"/g, ''));
+                if (values.length !== headers.length) continue; 
+                const newKey = db.ref("vehicles").push().key;
+                const record = {};
+                headers.forEach((h, index) => { if (h) record[h] = values[index]; });
+                updates[`/vehicles/${newKey}`] = record;
+            }
+            if (Object.keys(updates).length > 0) {
+                 db.ref().update(updates).then(() => {
+                    showCustomAlert(`${Object.keys(updates).length} vehicles imported successfully.`);
+                    csvFile.value = '';
+                 }).catch(error => showCustomAlert("Error importing data: " + error.message));
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    clearAllVehiclesBtn.addEventListener('click', () => {
+        showCustomConfirm("Are you sure you want to delete ALL vehicle and repair data? This action cannot be undone.", () => {
+            const updates = {};
+            updates['/vehicles'] = null;
+            updates['/repairs'] = null;
+            db.ref().update(updates).then(() => {
+                showCustomAlert("All data cleared successfully!");
+            }).catch(error => {
+                showCustomAlert("Failed to clear data: " + error.message);
+            });
+        });
+    });
+
+    addRepairBtn.addEventListener('click', () => {
+        repairForm.reset();
+        document.getElementById('repairEditKey').value = '';
+        document.getElementById('repairFormTitle').textContent = 'Add Repair Record';
+        repairModal.classList.add('open');
+    });
+
+    window.addRepairForVehicle = function(vehicleNumber) {
+        repairForm.reset();
+        document.getElementById('repairEditKey').value = '';
+        document.getElementById('repairFormTitle').textContent = 'Add Repair Record';
+        document.getElementById('repairVehicleNumber').value = vehicleNumber;
+        repairModal.classList.add('open');
+    }
+
+    cancelRepairBtn.addEventListener('click', () => repairModal.classList.remove('open'));
+
+    repairForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const editKey = document.getElementById('repairEditKey').value;
+        const repairData = {
+            vehicleNumber: document.getElementById('repairVehicleNumber').value,
+            repairDate: document.getElementById('repairDate').value,
+            description: document.getElementById('repairDescription').value,
+            cost: parseFloat(document.getElementById('repairCost').value),
+            technician: document.getElementById('repairTechnician').value,
+            status: document.getElementById('repairStatus').value
+        };
+        saveData(editKey, repairData, "repairs");
+        repairModal.classList.remove('open');
+    });
+
+    window.editRepair = function(key) {
+        const repair = allRepairs.find(r => r.key === key);
+        if(repair) {
+            document.getElementById('repairEditKey').value = key;
+            document.getElementById('repairVehicleNumber').value = repair.vehicleNumber;
+            document.getElementById('repairDate').value = repair.repairDate;
+            document.getElementById('repairDescription').value = repair.description;
+            document.getElementById('repairCost').value = repair.cost;
+            document.getElementById('repairTechnician').value = repair.technician;
+            document.getElementById('repairStatus').value = repair.status;
+            document.getElementById('repairFormTitle').textContent = 'Edit Repair Record';
+            repairModal.classList.add('open');
+        }
+    };
+
+    window.confirmDeleteRepair = function(key) {
+        showCustomConfirm("Are you sure you want to delete this repair record?", () => {
+            db.ref("repairs/" + key).remove().then(() => {
+                showCustomAlert("Repair record deleted successfully!");
+            }).catch(error => {
+                showCustomAlert("Failed to delete repair record: " + error.message);
+            });
+        });
+    };
+
+    repairSearchInput.addEventListener('input', filterRepairsTable);
+    repairStatusFilter.addEventListener('change', filterRepairsTable);
+
+    clearRepairFiltersBtn.addEventListener('click', () => {
+        repairSearchInput.value = '';
+        repairStatusFilter.value = '';
+        filterRepairsTable();
+    });
+
+    // Initialize the app by showing the vehicle page
+    document.addEventListener('DOMContentLoaded', () => {
+        showPage('vehicle-page');
+    });
+</script>
+</body>
+</html>
