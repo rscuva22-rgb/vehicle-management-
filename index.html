@@ -151,9 +151,6 @@
                 <button id="importCSVBtn" class="bg-gradient-to-r from-green-500 to-teal-600 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex items-center gap-2 w-full md:w-auto justify-center">
                     <i class="fas fa-upload"></i> Import Data
                 </button>
-                <button id="clearAllVehiclesBtn" class="bg-gradient-to-r from-red-500 to-red-600 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex items-center gap-2 w-full md:w-auto justify-center">
-                    <i class="fas fa-trash-alt"></i> Clear All Data
-                </button>
             </div>
         </div>
     </div>
@@ -403,7 +400,6 @@
     const exportVehiclesBtn = document.getElementById('exportVehiclesBtn');
     const importCSVBtn = document.getElementById('importCSVBtn');
     const csvFile = document.getElementById('csvFile');
-    const clearAllVehiclesBtn = document.getElementById('clearAllVehiclesBtn');
     
     const repairTable = document.getElementById('repairTable');
     const repairModal = document.getElementById('repairModal');
@@ -640,12 +636,16 @@
             lastServiceRemarks: document.getElementById('lastServiceRemarks').value,
         };
         
-        if (editKey) {
-            const existingVehicle = allVehicles.find(v => v.key === editKey);
-            vehicleData.imageFile = existingVehicle ? existingVehicle.imageFile : null;
-        } else {
-            vehicleData.imageFile = null;
-        }
+     if (editKey) {
+    const existingVehicle = allVehicles.find(v => v.key === editKey);
+    if (existingVehicle && !file) {
+        // keep old image if no new file uploaded
+        vehicleData.imageFile = existingVehicle.imageFile || null;
+    }
+} else {
+    vehicleData.imageFile = null;
+}
+
 
         if (file) {
             uploadFileAndSave(vehicleData, file, editKey, 'vehicle_images', 'vehicles');
@@ -680,17 +680,18 @@
         );
     }
     
-    function saveData(editKey, data, dbPath) {
-        if (editKey) {
-            db.ref(`${dbPath}/${editKey}`).set(data).then(() => {
-                showCustomAlert("Record updated successfully!");
-            });
-        } else {
-            db.ref(dbPath).push(data).then(() => {
-                showCustomAlert("Record added successfully!");
-            });
-        }
+  function saveData(editKey, data, dbPath) {
+    if (editKey) {
+        // 🔹 Use update so old fields are not erased
+        db.ref(`${dbPath}/${editKey}`).update(data).then(() => {
+            showCustomAlert("Record updated successfully!");
+        });
+    } else {
+        db.ref(dbPath).push(data).then(() => {
+            showCustomAlert("Record added successfully!");
+        });
     }
+}
 
     window.editVehicle = function(key) {
         const vehicle = allVehicles.find(v => v.key === key);
@@ -832,19 +833,6 @@
             }
         };
         reader.readAsText(file);
-    });
-
-    clearAllVehiclesBtn.addEventListener('click', () => {
-        showCustomConfirm("Are you sure you want to delete ALL vehicle and repair data? This action cannot be undone.", () => {
-            const updates = {};
-            updates['/vehicles'] = null;
-            updates['/repairs'] = null;
-            db.ref().update(updates).then(() => {
-                showCustomAlert("All data cleared successfully!");
-            }).catch(error => {
-                showCustomAlert("Failed to clear data: " + error.message);
-            });
-        });
     });
 
     addRepairBtn.addEventListener('click', () => {
