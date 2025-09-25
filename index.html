@@ -119,6 +119,7 @@
                 <table class="w-full text-sm text-left text-gray-700">
                     <thead class="text-xs uppercase bg-gray-100 text-gray-600 sticky top-0">
                         <tr>
+                            <th scope="col" class="px-6 py-3">No.</th>
                             <th scope="col" class="px-6 py-3">Vehicle Number</th>
                             <th scope="col" class="px-6 py-3">Board or Hiring</th>
                             <th scope="col" class="px-6 py-3">Region</th>
@@ -478,15 +479,16 @@
     function renderVehicleTable(vehicles) {
         vehicleTable.innerHTML = "";
         if (vehicles.length === 0) {
-            vehicleTable.innerHTML = `<tr><td colspan="17" class="text-center py-4 text-gray-500">No vehicles found.</td></tr>`;
+            vehicleTable.innerHTML = `<tr><td colspan="18" class="text-center py-4 text-gray-500">No vehicles found.</td></tr>`;
             return;
         }
-        vehicles.forEach(vehicle => {
+        vehicles.forEach((vehicle, index) => {
             const vehicleRepairs = allRepairs.filter(r => r.vehicleNumber === vehicle.vehicleNumber);
 
             const row = document.createElement('tr');
             row.className = "bg-white border-b border-gray-200";
             row.innerHTML = `
+                <td class="px-6 py-4">${index + 1}</td>
                 <td class="px-6 py-4 font-medium text-gray-900">${vehicle.vehicleNumber}</td>
                 <td class="px-6 py-4">${vehicle.vehicleIsBoard}</td>
                 <td class="px-6 py-4">${vehicle.vehicleRegion}</td>
@@ -515,7 +517,7 @@
             const historyRow = document.createElement('tr');
             historyRow.id = `history-${vehicle.key}`;
             historyRow.className = "hidden";
-            let historyHtml = `<td colspan="17" class="p-4 bg-gray-50">`;
+            let historyHtml = `<td colspan="18" class="p-4 bg-gray-50">`;
             if (vehicleRepairs.length > 0) {
                 historyHtml += `
                     <h4 class="text-lg font-semibold mb-2 text-gray-700">Repair History for ${vehicle.vehicleNumber}</h4>
@@ -781,8 +783,8 @@
     });
 
     exportVehiclesBtn.addEventListener('click', () => {
-        const headers = ['Vehicle Number', 'Board or Hiring', 'Region', 'Make', 'Vehicle Type', 'Model', 'Manufacture Year', 'Engine Number', 'Chassis Number', 'Revenue Licence Expiry', 'Fuel Balancing Rate', 'Drivers Name', 'Drivers Contact Number', 'Relevant Office', 'Fuel Type', 'Remarks', 'Image URL'];
-        const rows = allVehicles.map(v => [v.vehicleNumber, v.vehicleIsBoard, v.vehicleRegion, v.vehicleMake, v.vehicleType, v.vehicleModel, v.manufactureYear, v.engineNumber, v.chassisNumber, v.revenueLicence, v.fuelBalancingRate, v.driversName, v.driversContactNumber, v.vehicleLocation, v.fuelType, v.lastServiceRemarks, v.imageFile]);
+        const headers = ['No.', 'Vehicle Number', 'Board or Hiring', 'Region', 'Make', 'Vehicle Type', 'Model', 'Manufacture Year', 'Engine Number', 'Chassis Number', 'Revenue Licence Expiry', 'Fuel Balancing Rate', 'Drivers Name', 'Drivers Contact Number', 'Relevant Office', 'Fuel Type', 'Remarks', 'Image URL'];
+        const rows = allVehicles.map((v, index) => [index + 1, v.vehicleNumber, v.vehicleIsBoard, v.vehicleRegion, v.vehicleMake, v.vehicleType, v.vehicleModel, v.manufactureYear, v.engineNumber, v.chassisNumber, v.revenueLicence, v.fuelBalancingRate, v.driversName, v.driversContactNumber, v.vehicleLocation, v.fuelType, v.lastServiceRemarks, v.imageFile]);
 
         let csvContent = "data:text/csv;charset=utf-8," + headers.map(h => `"${h.replace(/"/g, '""')}"`).join(',') + '\n';
         rows.forEach(row => {
